@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cadáver Exquisito - Robótica Colectiva</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🤖 Cadáver Exquisito Robótico</h1>
+        <p>Una historia colaborativa creada por ESP32s conectados</p>
+      </header>
+
+      <main>
+        <!-- Sección de estado -->
+        <section class="status-section">
+          <h2>Estado de la Conexión</h2>
+          <div class="connection-info">
+            <div class="connection-status">
+              <span id="connectionStatus" class="status-disconnected">Desconectado</span>
+            </div>
+            <p id="statusMessage">Esperando conexión del ESP32...</p>
+          </div>
+        </section>
+
+        <!-- Sección para mostrar la historia final -->
+        <section class="story-section">
+          <h2>Historia del Cadáver Exquisito</h2>
+          <div class="story-container">
+            <div id="finalStory" class="story-text empty">
+              Esperando la historia colaborativa...
+            </div>
+          </div>
+          <div class="story-info">
+            <span id="storyTimestamp"></span>
+            <button id="clearStory" onclick="clearStory()">Limpiar Historia</button>
+          </div>
+        </section>
+            <div class="step" id="step1">
+              <span class="step-number">1</span>
+              <span class="step-label">Primer ESP32</span>
+            </div>
+            <div class="arrow">→</div>
+            <div class="step" id="step2">
+              <span class="step-number">2</span>
+              <span class="step-label">ESP32 de Lía</span>
+            </div>
+            <div class="arrow">→</div>
+            <div class="step" id="step3">
+              <span class="step-number">3</span>
+              <span class="step-label">Tercer ESP32</span>
+            </div>
+            <div class="arrow">→</div>
+            <div class="step" id="step4">
+              <span class="step-number">4</span>
+              <span class="step-label">Tu ESP32</span>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>Proyecto de Robótica Colectiva - Facultad</p>
+      </footer>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
