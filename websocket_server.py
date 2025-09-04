@@ -19,23 +19,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuración del servidor
-HOST = 'localhost'
-PORT = 8765
-ESP32_PORT = 8766  # Puerto separado para el ESP32
+HOST = '0.0.0.0'  # Escuchar en todas las interfaces de red
+PORT = 8765  # Un solo puerto para ESP32 y navegador
 
 # Conjuntos para mantener las conexiones activas
 web_clients: Set[websockets.WebSocketServerProtocol] = set()
 esp32_clients: Set[websockets.WebSocketServerProtocol] = set()
 
 
-async def handle_web_client(websocket, path):
-    """Maneja conexiones desde el navegador web"""
-    web_clients.add(websocket)
+async def handle_client(websocket):
+    """Maneja conexiones tanto de navegador web como de ESP32"""
+    global web_clients, esp32_clients  # Declarar variables globales
+    
     client_ip = websocket.remote_address[0] if websocket.remote_address else "unknown"
-    logger.info(f"Cliente web conectado desde {client_ip}")
+    logger.info(f"Cliente conectado desde {client_ip}")
+    
+    # Asumir que es cliente web por defecto y enviar mensaje de bienvenida
+    # Los ESP32 se identificarán cuando envíen su primer mensaje
+    web_clients.add(websocket)
+    logger.info(f"Cliente web agregado desde {client_ip}")
     
     try:
-        # Enviar mensaje de bienvenida
+        # Enviar mensaje de bienvenida a clientes web
         welcome_message = {
             "type": "connected",
             "message": "Conectado al servidor. Esperando historia del ESP32...",
@@ -43,57 +48,56 @@ async def handle_web_client(websocket, path):
         }
         await websocket.send(json.dumps(welcome_message))
         
-        # Mantener la conexión activa
         async for message in websocket:
-            logger.info(f"Mensaje recibido del cliente web: {message}")
-            # Los clientes web en este caso solo reciben, no envían
-            
+            # Detectar si es ESP32 por el contenido del mensaje
+            try:
+                data = json.loads(message)
+                if "message" in data and websocket.remote_address[0] != "192.168.0.107":
+                    # Es un ESP32 enviando historia (no desde la Mac del servidor)
+                    # Mover de web_clients a esp32_clients
+                    web_clients.discard(websocket)
+                    esp32_clients.add(websocket)
+                    logger.info(f"ESP32 detectado desde {client_ip}, reclasificando")
+                    
+                    # Reenviar a todos los clientes web
+                    await broadcast_story_to_web_clients(message)
+                else:
+                    # Es un mensaje de cliente web (probablemente ping/pong o error)
+                    logger.info(f"Mensaje de cliente web desde {client_ip}: {message}")
+                    
+            except json.JSONDecodeError:
+                # Es un cliente web enviando algo que no es JSON
+                logger.info(f"Mensaje no JSON de cliente web desde {client_ip}: {message}")
+                    
+                    
     except websockets.exceptions.ConnectionClosed:
-        logger.info(f"Cliente web {client_ip} desconectado")
+        logger.info(f"Cliente {client_ip} desconectado")
     except Exception as e:
-        logger.error(f"Error con cliente web {client_ip}: {e}")
+        logger.error(f"Error con cliente {client_ip}: {e}")
     finally:
         web_clients.discard(websocket)
-
-
-async def handle_esp32_client(websocket, path):
-    """Maneja conexiones desde el ESP32"""
-    esp32_clients.add(websocket)
-    client_ip = websocket.remote_address[0] if websocket.remote_address else "unknown"
-    logger.info(f"ESP32 conectado desde {client_ip}")
-    
-    try:
-        # Confirmar conexión al ESP32
-        confirmation = {
-            "type": "esp32_connected",
-            "message": "ESP32 conectado al servidor",
-            "timestamp": datetime.now().isoformat()
-        }
-        await websocket.send(json.dumps(confirmation))
-        
-        # Escuchar mensajes del ESP32
-        async for message in websocket:
-            logger.info(f"Historia recibida del ESP32: {message}")
-            await broadcast_story_to_web_clients(message)
-            
-    except websockets.exceptions.ConnectionClosed:
-        logger.info(f"ESP32 {client_ip} desconectado")
-    except Exception as e:
-        logger.error(f"Error con ESP32 {client_ip}: {e}")
-    finally:
         esp32_clients.discard(websocket)
 
 
 async def broadcast_story_to_web_clients(story_data):
     """Envía la historia a todos los clientes web conectados"""
+    global web_clients  # Declarar como variable global
+    
     if not web_clients:
         logger.warning("No hay clientes web conectados para enviar la historia")
         return
     
     try:
-        # Intentar parsear como JSON
+        # Parsear el JSON del ESP32
         story_json = json.loads(story_data)
-        message_to_send = story_data
+        
+        # Transformar al formato esperado por el navegador
+        message_to_send = json.dumps({
+            "type": "final_story",
+            "message": story_json.get("message", story_data),
+            "timestamp": datetime.now().isoformat(),
+            "source": "ESP32"
+        })
     except json.JSONDecodeError:
         # Si no es JSON, crear un mensaje estructurado
         message_to_send = json.dumps({
@@ -138,29 +142,19 @@ async def simulate_esp32_story():
 
 
 async def start_servers():
-    """Inicia ambos servidores WebSocket"""
-    logger.info("Iniciando servidores WebSocket...")
+    """Inicia el servidor WebSocket unificado"""
+    logger.info("Iniciando servidor WebSocket...")
     
-    # Servidor para clientes web
-    web_server = websockets.serve(handle_web_client, HOST, PORT)
-    logger.info(f"Servidor web iniciado en ws://{HOST}:{PORT}")
-    
-    # Servidor para ESP32
-    esp32_server = websockets.serve(handle_esp32_client, HOST, ESP32_PORT)
-    logger.info(f"Servidor ESP32 iniciado en ws://{HOST}:{ESP32_PORT}")
-    
-    # Ejecutar ambos servidores
-    await asyncio.gather(
-        web_server,
-        esp32_server
-    )
+    # Un solo servidor para ambos tipos de cliente
+    async with websockets.serve(handle_client, HOST, PORT):
+        logger.info(f"Servidor unificado iniciado en ws://{HOST}:{PORT}")
+        await asyncio.Future()  # Ejecutar para siempre
 
 
 def main():
     """Función principal"""
     print("🤖 Servidor WebSocket - Cadáver Exquisito Robótico")
-    print(f"📡 Servidor web: ws://{HOST}:{PORT}")
-    print(f"🔌 Servidor ESP32: ws://{HOST}:{ESP32_PORT}")
+    print(f"📡 Servidor unificado: ws://{HOST}:{PORT}")
     print("⚡ Presiona Ctrl+C para detener el servidor")
     print("-" * 50)
     
